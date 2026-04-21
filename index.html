@@ -1,12 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MD PAY</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MD PAY</title>
+
+<style>
+body{margin:0;font-family:sans-serif;background:#0f172a;color:white}
+.container{max-width:420px;margin:auto;padding:20px}
+.card{background:#1e293b;padding:15px;border-radius:12px;margin-top:15px}
+input{width:100%;padding:10px;margin-top:10px;border-radius:8px;border:none}
+button{width:100%;padding:12px;margin-top:10px;border:none;border-radius:8px;background:#22c55e;font-weight:bold}
+h2{text-align:center}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<div id="auth" class="card">
+<h2>MD PAY</h2>
+<input id="email" placeholder="Email">
+<input id="pass" type="password" placeholder="Password">
+<button onclick="register()">Register</button>
+<button onclick="login()">Login</button>
+</div>
+
+<div id="user" style="display:none">
+<div class="card">
+<h2>Wallet</h2>
+<h3 id="balance">₹0</h3>
+
+<input id="amount" placeholder="Amount">
+
+<img id="qr" style="width:100%;margin-top:10px">
+
+<input type="file" id="file">
+
+<button onclick="deposit()">Deposit</button>
+<button onclick="withdraw()">Withdraw</button>
+<button onclick="logout()">Logout</button>
+</div>
+
+<div class="card">
+<h3>History</h3>
+<div id="history"></div>
+</div>
+</div>
+
+<div id="admin" style="display:none">
+<div class="card">
+<h2>Admin Panel</h2>
+
+<input id="upiInput" placeholder="Set UPI ID">
+<button onclick="setUPI()">Save UPI</button>
+
+<div id="adminData"></div>
+
+<button onclick="logout()">Logout</button>
+</div>
+</div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, addDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAegviHYDQHr2hLSGvCq3PsoRpcDPGwDtM",
+  authDomain: "md-pay.firebaseapp.com",
+  projectId: "md-pay",
+  storageBucket: "md-pay.appspot.com",
+  messagingSenderId: "791808520166",
+  appId: "1:791808520166:web:e9b5bfa06ff546581c7027"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+const ADMIN="admin@mdpay.com";
+let uid="";
+let upi="";
+
+window.register=async()=>{
+let r=await createUserWithEmailAndPassword(auth,email.value,pass.value);
+await setDoc(doc(db,"users",r.user.uid),{coins:0,email:email.value});
+alert("Registered");
+};
+
+window.login=async()=>{
+let r=await signInWithEmailAndPassword(auth,email.value,pass.value);
+uid=r.user.uid;
+
+if(email.value===ADMIN){loadAdmin();}
+else{loadUser();}
+};
+
+async function loadUser(){
+auth.style.display="none";
+user.style.display="block";
+
+let u=await getDoc(doc(db,"users",uid));
+balance.innerText="₹"+u.data().coins;
+
+let snap=await getDoc(doc(db,"adminSettings","upi"));
+if(snap.exists()){
+upi=snap.data().upi;
+qr.src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa="+upi;
+}
+
+loadHistory();
+}
+
+window.deposit=async()=>{
+let f=file.files[0];
+if(!f)return alert("Upload proof");
+
+let sRef=ref(storage,"proof/"+Date.now());
+await uploadBytes(sRef,f);
+let url=await getDownloadURL(sRef);
+
+await addDoc(collection(db,"deposits"),{
+userId:uid,amount:Number(amount.value),proof:url,status:"pending"
+});
+
+alert("Deposit sent");
+};
+
+window.withdraw=async()=>{
+await addDoc(collection(db,"withdrawals"),{
+userId:uid,amount:Number(amount.value),status:"pending"
+});
+alert("Withdraw requested");
+};
+
+async function loadHistory(){
+let q=await getDocs(collection(db,"deposits"));
+let html="";
+q.forEach(d=>{
+if(d.data().userId===uid){
+html+=`<div>₹${d.data().amount} - ${d.data().status}</div>`;
+}
+});
+history.innerHTML=html;
+}
+
+async function loadAdmin(){
+auth.style.display="none";
+admin.style.display="block";
+
+let d=await getDocs(collection(db,"deposits"));
+let html="";
+d.forEach(x=>{
+let v=x.data();
+html+=`
+<div>
+₹${v.amount}
+<a href="${v.proof}" target="_blank">Proof</a>
+<button onclick="approve('${x.id}','${v.userId}',${v.amount})">Approve</button>
+</div>`;
+});
+adminData.innerHTML=html;
+}
+
+window.approve=async(id,u,a)=>{
+let refu=doc(db,"users",u);
+let snap=await getDoc(refu);
+
+await updateDoc(refu,{coins:(snap.data().coins||0)+a*1.05});
+await updateDoc(doc(db,"deposits",id),{status:"approved"});
+
+alert("Approved");
+};
+
+window.setUPI=async()=>{
+await setDoc(doc(db,"adminSettings","upi"),{upi:upiInput.value});
+alert("UPI saved");
+};
+
+window.logout=async()=>{
+await signOut(auth);
+location.reload();
+};
+</script>
+
+</body>
+  </html>
