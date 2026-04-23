@@ -1,0 +1,29 @@
+body{
+  background:#0B0F19;
+  color:white;
+  font-family:Arial;
+}
+
+.center{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+}
+
+.card{
+  background:#111827;
+  padding:20px;
+  border-radius:12px;
+}
+
+input{
+  display:block;
+  margin:10px 0;
+  padding:10px;
+}
+
+button{
+  padding:10px;
+  margin:5px;
+}
